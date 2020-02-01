@@ -12,10 +12,11 @@ module.exports.getInvite = async event => {
       headers: { 'Content-Type': 'text/plain' },
     };
   }
+  const sourceIp = event.requestContext.identity.sourceIp;
   const captchaParams = {
     secret: process.env.RECAPTCHA_SECRET,
     response: event.queryStringParameters.captcha,
-    remoteip: event.requestContext.identity.sourceIp,
+    remoteip: sourceIp,
   };
   const captchaReq = await fetch('https://www.google.com/recaptcha/api/siteverify', {
     method: 'POST',
@@ -24,13 +25,14 @@ module.exports.getInvite = async event => {
   });
   const captchaRes = await captchaReq.json();
   if (!captchaRes.success) {
-    let errMsg = 'Captcha not valid. Please retry.';
+    let errDesc = '';
     if (captchaRes['error-codes']) {
-      errMsg += ' Error(s): ' + captchaRes['error-codes'].join(', ');
+      errDesc = ' Error(s): ' + captchaRes['error-codes'].join(', ');
     }
+    console.log(`Received invalid captcha from IP ${sourceIp}${errDesc}`);
     return {
       statusCode: 401,
-      body: errMsg,
+      body: `Captcha not valid. Please retry.${errDesc}`,
       headers: { 'Content-Type': 'text/plain' },
     };
   }
@@ -53,19 +55,24 @@ module.exports.getInvite = async event => {
   );
   const discordRes = await discordReq.json();
   if (discordReq.status < 200 || discordReq.status >= 400) {
+    let errMsg = `Discord returned error ${discordRes.code}: ${discordRes.message}`;
+    console.error(errMsg);
     return {
       statusCode: 500,
-      body: `Discord returned error ${discordRes.code}: ${discordRes.message}`,
+      body: errMsg,
       headers: { 'Content-Type': 'text/plain' },
     };
   }
   if (!discordRes.code) {
+    let errMsg = 'No invite code received from Discord';
+    console.error(errMsg);
     return {
       statusCode: 500,
-      body: 'No invite code received from Discord.',
+      body: errMsg,
       headers: { 'Content-Type': 'text/plain' },
     };
   }
+  console.log(`Giving invite ${discordRes.code} to IP ${sourceIp}`);
 
   return {
     statusCode: 302,
